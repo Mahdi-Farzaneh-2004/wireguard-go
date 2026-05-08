@@ -1,0 +1,72 @@
+name: Build WireGuard client.conf
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Also create a GitHub Release'
+        required: false
+        default: 'false'
+
+jobs:
+  build-client:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qrencode
+
+      - name: Generate client.conf
+        env:
+          SERVER_PRIVATE_KEY: ${{ secrets.SERVER_PRIVATE_KEY }}
+          SERVER_PUBLIC_KEY: ${{ secrets.SERVER_PUBLIC_KEY }}
+          CLIENT_CONFIG_NAME: ${{ secrets.CLIENT_CONFIG_NAME }}
+        run: |
+          set -e
+
+          if [ -z "${SERVER_PRIVATE_KEY}" ]; then
+            echo "SERVER_PRIVATE_KEY secret is empty/missing"; exit 1
+          fi
+          if [ -z "${SERVER_PUBLIC_KEY}" ]; then
+            echo "SERVER_PUBLIC_KEY secret is empty/missing"; exit 1
+          fi
+          if [ -z "${CLIENT_CONFIG_NAME}" ]; then
+            echo "CLIENT_CONFIG_NAME secret is empty/missing"; exit 1
+          fi
+
+          # اینجا باید قالب client.conf شما باشد.
+          # فعلاً یک نمونه مینیمال می‌گذارم تا فایل ساخته شود.
+          # اگر شما قبلاً قالب/اسکریپت آماده دارید، جایگزینش کن.
+          cat > client.conf << 'EOF'
+          # WireGuard client config (generated)
+          # Client: PLACEHOLDER_CLIENT_NAME
+
+          [Interface]
+          PrivateKey = PLACEHOLDER_CLIENT_PRIVATE_KEY
+          Address = 10.0.0.2/32
+          DNS = 1.1.1.1
+
+          [Peer]
+          PublicKey = PLACEHOLDER_SERVER_PUBLIC_KEY
+          AllowedIPs = 0.0.0.0/0, ::/0
+          Endpoint = PLACEHOLDER_ENDPOINT:51820
+          PersistentKeepalive = 25
+          EOF
+
+          # اگر خواستی حداقل جایگزینی ساده انجام بدیم:
+          sed -i "s/PLACEHOLDER_CLIENT_NAME/${CLIENT_CONFIG_NAME}/g" client.conf
+          sed -i "s/PLACEHOLDER_SERVER_PUBLIC_KEY/${SERVER_PUBLIC_KEY}/g" client.conf
+
+          echo "Generated client.conf:"
+          sed -n '1,120p' client.conf
+
+      - name: Upload Artifact client.conf
+        uses: actions/upload-artifact@v4
+        with:
+          name: client.conf
+          path: client.conf
