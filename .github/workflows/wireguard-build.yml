@@ -1,36 +1,73 @@
-name: Build WireGuard client.conf
+name: Build and Release
 
 on:
+  repository_dispatch:
   workflow_dispatch:
+    inputs:
+      wggo_version:
+        description: 'wireguard-go version'
+        required: false
+      go_version:
+        description: 'go environment version'
+        required: false
+      release:
+        description: 'Upload to Release'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
-  build-client:
+  build:
     runs-on: ubuntu-latest
+
     steps:
+
+      - name: Get Version Number
+        run: |
+          if [[ -n "${{ github.event.inputs.wggo_version }}" ]]; then
+            WGGO_VERSION=${{ github.event.inputs.wggo_version }}
+          else
+            WGGO_VERSION=$(curl -fsSL https://api.github.com/repos/WireGuard/wireguard-go/tags | grep 'name' | grep -v v | head -1 | cut -d'"' -f4)
+          fi
+          echo "WGGO_VERSION=${WGGO_VERSION}" >> $GITHUB_ENV
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qrencode
+      - name: Setup go
+        if: github.event.inputs.go_version == ''
+        uses: actions/setup-go@v3
+        with:
+          go-version: '>=1.18'
+          check-latest: true
 
-      - name: Generate client.conf (all from secrets)
-        env:
-          CLIENT_NAME: ${{ secrets.CLIENT_NAME }}
-          CLIENT_PRIVATE_KEY: ${{ secrets.CLIENT_PRIVATE_KEY }}
-          SERVER_PUBLIC_KEY: ${{ secrets.SERVER_PUBLIC_KEY }}
-          CLIENT_ADDRESS: ${{ secrets.CLIENT_ADDRESS }}
-          CLIENT_DNS: ${{ secrets.CLIENT_DNS }}
-          SERVER_ENDPOINT: ${{ secrets.SERVER_ENDPOINT }}
-          CLIENT_ALLOWED_IPS: ${{ secrets.CLIENT_ALLOWED_IPS }}
-        run: |
-          set -euo pipefail
+      - name: Setup go (target version)
+        if: github.event.inputs.go_version != ''
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ github.event.inputs.go_version }}
+          check-latest: true
 
-          # validate
-          for v in CLIENT_NAME CLIENT_PRIVATE_KEY SERVER_PUBLIC_KEY CLIENT_ADDRESS CLIENT_DNS SERVER_ENDPOINT CLIENT_ALLOWED_IPS; do
-            if [ -z "${!v}" ]; then
-              echo "::error::Missing secret: $v"
-              exit 1
-            fi
-          done
+      - name: Build
+        run: ./build.sh
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: wireguard-go-${{ env.WGGO_VERSION }}
+          path: build
+
+      - name: Upload to Release
+        if: contains(github.event.action, 'Bump') || github.event.inputs.release == 'true'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ github.token }}
+          file: build/*
+          tag: ${{ env.WGGO_VERSION }}
+          overwrite: true
+          file_glob: true
+          prerelease: false
+          body: "Change logs: https://git.zx2c4.com/wireguard-go/log"
