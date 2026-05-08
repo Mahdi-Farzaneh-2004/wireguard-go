@@ -6,7 +6,6 @@ on:
 jobs:
   build-client:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,69 +15,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qrencode
 
-      - name: Validate secrets (fail fast)
+      - name: Generate client.conf (all from secrets)
         env:
-          SERVER_PRIVATE_KEY: ${{ secrets.SERVER_PRIVATE_KEY }}
-          SERVER_PUBLIC_KEY:  ${{ secrets.SERVER_PUBLIC_KEY }}
-          CLIENT_CONFIG_NAME: ${{ secrets.CLIENT_CONFIG_NAME }}
-        run: |
-          set -e
-
-          echo "✅ Checking required secrets..."
-          if [ -z "${SERVER_PRIVATE_KEY}" ]; then
-            echo "::error::SERVER_PRIVATE_KEY is missing or empty"
-            exit 1
-          fi
-          if [ -z "${SERVER_PUBLIC_KEY}" ]; then
-            echo "::error::SERVER_PUBLIC_KEY is missing or empty"
-            exit 1
-          fi
-          if [ -z "${CLIENT_CONFIG_NAME}" ]; then
-            echo "::error::CLIENT_CONFIG_NAME is missing or empty"
-            exit 1
-          fi
-
-          echo "✅ Secrets look present."
-          echo "CLIENT_CONFIG_NAME='${CLIENT_CONFIG_NAME}'"
-
-      - name: Generate client.conf
-        env:
-          SERVER_PRIVATE_KEY: ${{ secrets.SERVER_PRIVATE_KEY }}
-          SERVER_PUBLIC_KEY:  ${{ secrets.SERVER_PUBLIC_KEY }}
-          CLIENT_CONFIG_NAME: ${{ secrets.CLIENT_CONFIG_NAME }}
+          CLIENT_NAME: ${{ secrets.CLIENT_NAME }}
+          CLIENT_PRIVATE_KEY: ${{ secrets.CLIENT_PRIVATE_KEY }}
+          SERVER_PUBLIC_KEY: ${{ secrets.SERVER_PUBLIC_KEY }}
+          CLIENT_ADDRESS: ${{ secrets.CLIENT_ADDRESS }}
+          CLIENT_DNS: ${{ secrets.CLIENT_DNS }}
+          SERVER_ENDPOINT: ${{ secrets.SERVER_ENDPOINT }}
+          CLIENT_ALLOWED_IPS: ${{ secrets.CLIENT_ALLOWED_IPS }}
         run: |
           set -euo pipefail
 
-          # اگر می‌خوای address/dns/endpoint و... هم از Secret بگیری
-          # فعلاً مثل قالب نمونه تنظیم می‌کنیم.
-          echo "ℹ️ Generating client.conf..."
-
-          cat > client.conf << 'EOF'
-# WireGuard client config (generated)
-# Client: PLACEHOLDER_CLIENT_NAME
-
-[Interface]
-PrivateKey = PLACEHOLDER_CLIENT_PRIVATE_KEY
-Address = 10.0.0.2/32
-DNS = 1.1.1.1
-
-[Peer]
-PublicKey = PLACEHOLDER_SERVER_PUBLIC_KEY
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = PLACEHOLDER_ENDPOINT:51820
-PersistentKeepalive = 25
-EOF
-
-          # جایگزینی‌ها (این‌ها فعلاً placeholder باقی می‌مانند مگر اینکه شما خواسته باشی dynamic کنیم)
-          # اگر شما برای client هم PrivateKey دارید، باید Secret مربوطه را اضافه کنیم و این بخش را اصلاح کنیم.
-          sed -i "s/PLACEHOLDER_CLIENT_NAME/${CLIENT_CONFIG_NAME}/g" client.conf
-          sed -i "s/PLACEHOLDER_SERVER_PUBLIC_KEY/${SERVER_PUBLIC_KEY}/g" client.conf
-
-          echo "✅ client.conf generated. Preview:"
-          sed -n '1,120p' client.conf
-
-      - name: Upload Artifact client.conf
-        uses: actions/upload-artifact@v4
-        with:
-          name: client.conf
-          path: client.conf
+          # validate
+          for v in CLIENT_NAME CLIENT_PRIVATE_KEY SERVER_PUBLIC_KEY CLIENT_ADDRESS CLIENT_DNS SERVER_ENDPOINT CLIENT_ALLOWED_IPS; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Missing secret: $v"
+              exit 1
+            fi
+          done
